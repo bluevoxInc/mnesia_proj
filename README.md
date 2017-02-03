@@ -43,11 +43,7 @@ Mnesia in a cluser**
   [:"n1@127.0.0.1"]
 
 6) Stop Amnesia on both nodes:
-  iex(n1@127.0.0.1)2> Amnesia.stop
-  :stopped
-  
-  iex(n2@127.0.0.1)2> Amnesia.stop
-  :stopped
+  iex(n1@127.0.0.1)2> :rpc.multicall(Amnesia, :stop, [])
 
 7) Create a schema (only need to do this from one of the nodes):
   iex(n1@127.0.0.1)4> nodes = [node | Node.list]
@@ -58,11 +54,7 @@ Mnesia in a cluser**
   will create Mnesia.n1@127.0.0.1 and Mnesia.n2@127.0.0.1 in the root folder.
 
 8) Start Amnesia on both nodes:
-  iex(n1@127.0.0.1)6> Amnesia.start
-  :ok
-  
-  iex(n2@127.0.0.1)3> Amnesia.start
-  :ok
+  iex(n1@127.0.0.1)6> :rpc.multicall(Amnesia, :start, [])
 
 9) Create tables (run from one node only):
   iex(n1@127.0.0.1)6> Database.create!(disk: nodes)
@@ -166,5 +158,105 @@ Mnesia in a cluser**
   %Database1.User{email: "richard@example.com", id: 2, name: "Richard"}
   %Database1.User{email: "linus@example.com", id: 3, name: "Linus"}
   %Database1.User{email: "bill@blahblah.com", id: 5, name: "Bill"}
+  :ok
+
+14) Add a new node:
+
+  Modify the sys.config file to add a new node.
+
+  [{kernel,
+    [
+      {sync_nodes_optional, ['n1@127.0.0.1', 'n2@127.0.0.1', 'n3@127.0.0.1']},
+      {sync_nodes_timeout, 3000}
+    ]}
+  ].
+
+  Start the new node and ensure it is connected to the cluster.
+
+  $ iex --name n3@127.0.0.1 --erl "-config sys.config" -S mix
+
+  iex(n3@127.0.0.1)6> Node.list
+  [:"n1@127.0.0.1", :"n2@127.0.0.1"]
+
+The state before the new mnesia node has been added:
+
+  iex(n1@127.0.0.1)1> :mnesia.info
+  running db nodes   = ['n2@127.0.0.1','n1@127.0.0.1']
+  stopped db nodes   = [] 
+  master node tables = []
+  remote             = []
+  ram_copies         = []
+  disc_copies        = ['Elixir.Database1','Elixir.Database1.Message',
+                        'Elixir.Database1.User',schema]
+                        disc_only_copies   = []
+         [{'n1@127.0.0.1',disc_copies},{'n2@127.0.0.1',disc_copies}] = 
+         ['Elixir.Database1',
+                        'Elixir.Database1.User',
+                        schema,
+                        'Elixir.Database1.Message']
+
+Add the new node:
+  iex(n1@127.0.0.1)2> :mnesia.change_config(:extra_db_nodes, [:"n3@127.0.0.1"])
+  {:ok, [:"n3@127.0.0.1"]}
+
+The state with the added node:
+
+  iex(n1@127.0.0.1)3> :mnesia.info
+  running db nodes   = ['n3@127.0.0.1','n2@127.0.0.1','n1@127.0.0.1']
+  stopped db nodes   = [] 
+  master node tables = []
+  remote             = []
+  ram_copies         = []
+  disc_copies        = ['Elixir.Database1','Elixir.Database1.Message',
+                        'Elixir.Database1.User',schema]
+                        disc_only_copies   = []
+           [{'n1@127.0.0.1',disc_copies},{'n2@127.0.0.1',disc_copies}] =
+           ['Elixir.Database1',
+           'Elixir.Database1.Message',
+           'Elixir.Database1.User']
+           [{'n1@127.0.0.1',disc_copies},
+           {'n2@127.0.0.1',disc_copies},
+           {'n3@127.0.0.1',ram_copies}] = [schema]
+  :ok
+
+Change {'n3@127.0.0.1',ram_copies} to disc_copies.
+  iex(n1@127.0.0.1)4>:mnesia.change_table_copy_type(:schema, :"n3@127.0.0.1", :disc_copies)
+
+Some mnesia info that might come in handy:
+
+  iex(n1@127.0.0.1)5> :mnesia.system_info(:tables) 
+  [Database1.Message, Database1.User, Database1, :schema]
+
+  iex(n1@127.0.0.1)6> :mnesia.table_info(Database1.User, :where_to_commit)
+  ["n1@127.0.0.1": :disc_copies, "n2@127.0.0.1": :disc_copies]
+  iex(n1@127.0.0.1)7> :mnesia.system_info(:tables)
+  [:schema, Database1.User, Database1.Message, Database1]
+  iex(n1@127.0.0.1)8> :mnesia.table_info(Database1, :where_to_commit)     
+  ["n1@127.0.0.1": :disc_copies, "n2@127.0.0.1": :disc_copies]
+  iex(n1@127.0.0.1)9> :mnesia.table_info(Database1.Message, :where_to_commit)
+  ["n1@127.0.0.1": :disc_copies, "n2@127.0.0.1": :disc_copies]
+
+Copy the database tables.
+  iex(n1@127.0.0.1)10> Amnesia.Table.add_copy(Database1, :"n3@127.0.0.1", :disk) 
+  :ok
+  iex(n1@127.0.0.1)11> Amnesia.Table.add_copy(Database1.User, :"n3@127.0.0.1", :disk)
+  :ok
+  iex(n1@127.0.0.1)12> Amnesia.Table.add_copy(Database1.Message, :"n3@127.0.0.1", :disk)
+  :ok
+
+Test the database on new node.
+  iex(n3@127.0.0.1)1> use Amnesia
+  iex(n3@127.0.0.1)2> use Database1
+
+  iex(n3@127.0.0.1)3> Amnesia.transaction do                          
+  ...(n3@127.0.0.1)3> r = User.where id > 0                           
+  ...(n3@127.0.0.1)3> r |> Amnesia.Selection.values |> Enum.each &IO.inspect(&1)
+  ...(n3@127.0.0.1)3> end
+
+  %Database1.User{email: "john@example.com", id: 1, name: "John"}
+  %Database1.User{email: "richard@example.com", id: 2, name: "Richard"}
+  %Database1.User{email: "linus@example.com", id: 3, name: "Linus"}
+  %Database1.User{email: "bill@blahblah.com", id: 5, name: "Bill"}
+  %Database1.User{email: "fred@example.com", id: 6, name: "fred"}
   :ok
 
