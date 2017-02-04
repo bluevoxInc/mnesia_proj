@@ -19,6 +19,4 @@ erl_crash.dump
 # Also ignore archive artifacts (built via "mix archive.build").
 *.ez
 
-/Mnesia.n1@127.0.0.1
-/Mnesia.n2@127.0.0.1
-/Mnesia.n3@127.0.0.1
+/Mnesia.*
