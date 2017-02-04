@@ -1,7 +1,7 @@
 # MnesiaProj  
 
 **Description -- demonstration project to use Amnesia(Elixir wrapper for  
-Mnesia in a cluser**  
+Mnesia) in a cluser**  
 
 #1) Create a sys.config file in project root to specify nodes:  
 
